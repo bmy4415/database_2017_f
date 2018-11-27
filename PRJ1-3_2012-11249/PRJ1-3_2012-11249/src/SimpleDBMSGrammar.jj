@@ -1,0 +1,2190 @@
+/**
+ * JavaCC template file created by SF JavaCC plugin 1.5.17+ wizard for JavaCC 1.5.0+
+ */
+options
+{
+  static = false;
+  DEBUG_PARSER = false;
+  IGNORE_CASE = true;
+}
+
+PARSER_BEGIN(SimpleDBMS)
+
+import java.util.*;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Arrays;
+import java.util.Vector;
+import java.util.StringTokenizer;
+import java.io.File;
+import java.io.UnsupportedEncodingException;
+
+
+import com.sleepycat.je.Database;
+import com.sleepycat.je.DatabaseEntry;
+import com.sleepycat.je.DatabaseException;
+import com.sleepycat.je.DatabaseConfig;
+import com.sleepycat.je.Cursor;
+
+import com.sleepycat.je.Environment;
+import com.sleepycat.je.EnvironmentConfig;
+
+import com.sleepycat.je.LockMode;
+import com.sleepycat.je.OperationStatus;
+
+
+
+
+public class SimpleDBMS
+{
+  class TableExpression {
+    ArrayList<String> tableReferenceList;
+    BooleanValueExpression bve;
+
+    public TableExpression(ArrayList<String> tableReferenceList, BooleanValueExpression bve) {
+		this.tableReferenceList = tableReferenceList;
+		this.bve = bve;
+    }
+  }
+  class CompOperand {
+	String compOperandAux;
+	String columnName;
+	String comparableValue;
+
+	public CompOperand(String compOperandAux, String columnName, String comparableValue) {
+		this.compOperandAux = compOperandAux;
+		this.columnName = columnName;
+		this.comparableValue = comparableValue;
+	}
+	public void print() {
+		if(compOperandAux != null) { System.out.print(compOperandAux); }
+		if(columnName != null) { System.out.print(columnName); }
+		if(comparableValue != null) { System.out.print(comparableValue); }
+	}
+}
+
+
+class ComparisonPredicate {
+	CompOperand co1;
+	CompOperand co2;
+	String compOp;
+
+	public ComparisonPredicate(CompOperand co1, CompOperand co2, String compOp) {
+		this.co1 = co1;
+		this.co2 = co2;
+		this.compOp = compOp;
+	}
+	public void print() {
+		co1.print();
+		System.out.print(" " + compOp + " ");
+		co2.print();
+		System.out.println();
+	}
+}
+
+class NullPredicate {
+	String nullPredicateAux;
+	String columnName;
+	String nullOperation;
+
+	public NullPredicate(String nullPredicateAux, String columnName, String nullOperation) {
+		this.nullPredicateAux = nullPredicateAux;
+		this.columnName = columnName;
+		this.nullOperation = nullOperation;
+	}
+	public void print() {
+		if(nullPredicateAux != null) { System.out.print(nullPredicateAux + " "); }
+		if(columnName != null) { System.out.print(columnName + " "); }
+		if(nullPredicateAux == null && columnName == null) { System.out.println("NullPredicate both null error"); }
+		if(nullPredicateAux != null && columnName != null) { System.out.println("NullPredicate none null error"); }
+		System.out.println(nullOperation);
+	}
+}
+
+class Predicate {
+	ComparisonPredicate cp;
+	NullPredicate np;
+
+	public Predicate(ComparisonPredicate cp, NullPredicate np) {
+		this.cp = cp;
+		this.np = np;
+	}
+	public void print() {
+		if(cp != null) cp.print();
+		if(np != null) np.print();
+		if(cp == null && np == null) { System.out.println("Predicate both null error"); }
+		if(cp != null && np != null) { System.out.println("Predicate none null error"); }
+	}
+}
+
+class BooleanTest {
+	Predicate p;
+	BooleanValueExpression bve;
+
+	public BooleanTest(Predicate p, BooleanValueExpression bve) {
+		this.p = p;
+		this.bve = bve;
+	}
+	public void print() {
+		if(p != null) { p.print(); }
+		if(bve != null) { bve.print(); }
+		if(p == null && bve == null) { System.out.println("BooleanTest both null error"); }
+		if(p != null && bve != null) { System.out.println("BooleanTest none null error"); }
+	}
+	public String eval(ArrayList<String> values, String tblName) {
+	  try { 
+	  	if(bve == null) return evalRecordWithPredicate(values, tblName, p);
+	  	else return bve.eval(values, tblName);
+	 }
+	 catch (ParseException e)
+    {
+      System.out.println("Syntax error in eval...");
+      parser = new SimpleDBMS(System.in);
+      handleSyntaxError(parser);
+      return "false";
+    }
+	}
+	public String evalSel(ArrayList<String> values, ArrayList<String> tblNames) {
+	  try { 
+	  	if(bve == null) return evalWithPredicate(values, p, tblNames);
+	  	else return bve.evalSel(values, tblNames);
+	 }
+	 catch (ParseException e)
+    {
+      System.out.println("Syntax error in eval...");
+      parser = new SimpleDBMS(System.in);
+      handleSyntaxError(parser);
+      return "false";
+    }
+	}
+}
+
+class BooleanFactor {
+	String not;
+	BooleanTest bt;
+
+	public BooleanFactor(String not, BooleanTest bt) {
+		this.not = not;
+		this.bt = bt;
+	}
+	public void print() {
+		if(not != null) { System.out.print(not + " "); }
+		bt.print();
+	}
+	public String eval(ArrayList<String> values, String tblName) {
+	  String result = bt.eval(values, tblName);
+	  if(not == null) {
+	    return result;
+	  }
+	  else {
+	    if(result.equals("true")) { return "false"; }
+	    else if(result.equals("false")) { return "true"; }
+	    else if(result.equals("unknown")) { return "unknown"; }
+	    else { System.out.println("BooleanFactor, result is not true or false or unknown error"); return "false";}
+	  }
+	}
+	public String evalSel(ArrayList<String> values, ArrayList<String> tblNames) {
+	  String result = bt.evalSel(values, tblNames);
+	  if(not == null) { return result; }
+	  else {
+	    if(result.equals("true")) { return "false"; }
+	    else if(result.equals("false")) { return "true"; }
+	    else if(result.equals("unknown")) { return "unknown"; }
+	    else { System.out.println("BooleanFactor evalSel, result is not true or false or unknown error"); return "false";}
+	  }
+	}
+}
+
+class BooleanTerm {
+	ArrayList<BooleanFactor> bfs;
+
+	public BooleanTerm() {
+		bfs = new ArrayList<BooleanFactor>();
+	}
+	public void print() {
+		for(int i=0; i<bfs.size(); i++) {
+			bfs.get(i).print();
+		}
+	}
+	// bf and bf and bf...
+	public String eval(ArrayList<String> values, String tblName) {
+	  int trueCnt = 0;
+	  int falseCnt = 0;
+	  int unknownCnt = 0;
+	  for(BooleanFactor bfactor : bfs) {
+	    if(bfactor.eval(values, tblName).equals("true")) { trueCnt++; }
+	    else if(bfactor.eval(values, tblName).equals("false")) { falseCnt++; }
+	    else if(bfactor.eval(values, tblName).equals("unknown")) { unknownCnt++; }
+	    else { System.out.println("BooleanTerm, eval error"); return "false"; }
+	  }
+	  if(falseCnt != 0) return "false";
+	  if(unknownCnt != 0) return "unknown";
+	  return "true";
+	}
+	public String evalSel(ArrayList<String> values, ArrayList<String> tblNames) {
+	  int trueCnt = 0;
+	  int falseCnt = 0;
+	  int unknownCnt = 0;
+	  for(BooleanFactor bfactor : bfs) {
+	    if(bfactor.evalSel(values, tblNames).equals("true")) { trueCnt++; }
+	    else if(bfactor.evalSel(values, tblNames).equals("false")) { falseCnt++; }
+	    else if(bfactor.evalSel(values, tblNames).equals("unknown")) { unknownCnt++; }
+	    else { System.out.println("BooleanTerm, eval error"); return "false"; }
+	  }
+	  if(falseCnt != 0) return "false";
+	  if(unknownCnt != 0) return "unknown";
+	  return "true";
+	}
+}
+
+class BooleanValueExpression {
+	ArrayList<BooleanTerm> bts;
+
+	public BooleanValueExpression() {
+		bts = new ArrayList<BooleanTerm>();
+	}
+	public void print() {
+		for(int i=0; i<bts.size(); i++) {
+			bts.get(i).print();
+		}
+	}
+	// bt or bt or bt...
+	public String eval(ArrayList<String> values, String tblName) {
+	  if(bts.size() == 0) return "true";
+	  int trueCnt = 0;
+	  int falseCnt = 0;
+	  int unknownCnt = 0;
+	  for (BooleanTerm bterm : bts) {
+	    if(bterm.eval(values, tblName).equals("true")) { trueCnt++; }
+	    else if(bterm.eval(values, tblName).equals("false")) { falseCnt++; }
+	    else if(bterm.eval(values, tblName).equals("unknown")) { unknownCnt++; }
+	    else { System.out.println("BooleanValueExpression, eval error"); return "false"; }
+	  }
+	  if(trueCnt != 0) return "true";
+	  if(unknownCnt != 0) return "unknown";
+	  return "false";
+	}
+	public String evalSel(ArrayList<String> values, ArrayList<String> tblNames) {
+	  if(bts.size() == 0) return "true";
+	  int trueCnt = 0;
+	  int falseCnt = 0;
+	  int unknownCnt = 0;
+	  for (BooleanTerm bterm : bts) {
+	    if(bterm.evalSel(values, tblNames).equals("true")) { trueCnt++; }
+	    else if(bterm.evalSel(values, tblNames).equals("false")) { falseCnt++; }
+	    else if(bterm.evalSel(values, tblNames).equals("unknown")) { unknownCnt++; }
+	    else { System.out.println("BooleanValueExpression, eval error"); return "false"; }
+	  }
+	  if(trueCnt != 0) return "true";
+	  if(unknownCnt != 0) return "unknown";
+	  return "false";
+	}
+}
+  static final String [] keywordList = new String []
+  {
+    "exit",
+    "create",
+    "table",
+    "not",
+    "null",
+    "primary",
+    "key",
+    "foreign",
+    "references",
+    "int",
+    "char",
+    "date",
+    "drop",
+    "show",
+    "tables",
+    "desc",
+    "select",
+    "as",
+    "from",
+    "where",
+    "and",
+    "or",
+    "is",
+    "insert",
+    "into",
+    "values",
+    "delete"
+  };
+
+  static final Set<String> keywordSet = new HashSet<String> (Arrays.asList(keywordList));
+  static myDatabase myDB = new myDatabase();
+  static SimpleDBMS parser;
+  static String tmpColDef = "";
+  static String tmpPriKey = "";
+  static String tmpForKey = "";
+  static String delim = "|";
+  static String createTblName = "";
+  static String dropTblName = "";
+  static Vector<String > tblNameList = new Vector<String >();
+
+  public static void main(String args []) throws ParseException
+  {
+    myDB.openDB();
+    parser = new SimpleDBMS(System.in);
+    tblNameList = myDB.getDB("@table name");
+    handleSyntaxError(parser);
+  }
+
+  public static void handleSyntaxError(SimpleDBMS parser)
+  {
+    try
+    {
+      parser.Start();
+    }
+    catch (ParseException e)
+    {
+      System.out.println("Syntax error");
+      myDB.deleteTable(createTblName);
+      parser = new SimpleDBMS(System.in);
+      handleSyntaxError(parser);
+    }
+  }
+
+  public static void handleDBError(SimpleDBMS parser)  {    parser = new SimpleDBMS(System.in);    handleSyntaxError(parser);  }
+}
+
+class myDatabase{  static Environment myDBEnvironment = null;  static Database myDatabase = null;  static Cursor myDBCursor = null;  public static void openDB()  {    EnvironmentConfig envConfig = new EnvironmentConfig();    envConfig.setAllowCreate(true);    myDBEnvironment = new Environment(new File("db/"), envConfig);    DatabaseConfig dbConfig = new DatabaseConfig();    dbConfig.setAllowCreate(true);    dbConfig.setSortedDuplicates(true);    myDatabase = myDBEnvironment.openDatabase(null, "myDatabase", dbConfig);    myDBCursor = myDatabase.openCursor(null, null);  }  public static void closeDB()  {    if (myDBCursor != null) myDBCursor.close();    if (myDatabase != null) myDatabase.close();    if (myDBEnvironment != null) myDBEnvironment.close();  }  public static void putDB(String key, String value)  {    DatabaseEntry _key;    DatabaseEntry _value;    try    {      _key = new DatabaseEntry(key.getBytes("UTF-8"));      _value = new DatabaseEntry(value.getBytes("UTF-8"));      myDBCursor.put(_key, _value);    }    catch (DatabaseException de)    {}    catch (UnsupportedEncodingException e)    {      e.printStackTrace();    }  }  public static Vector<String> getDB(String key)  {    Vector<String> valueSet = new Vector<String>();    Cursor cursor = null;    try    {      DatabaseEntry foundKey = new DatabaseEntry(key.getBytes("UTF-8"));      DatabaseEntry foundValue = new DatabaseEntry();      cursor = myDatabase.openCursor(null, null);      OperationStatus retVal = cursor.getSearchKey(foundKey, foundValue, LockMode.DEFAULT);      while (retVal == OperationStatus.SUCCESS)      {        String valueString = new String(foundValue.getData(), "UTF-8");        valueSet.addElement(valueString);        retVal = cursor.getNextDup(foundKey, foundValue, LockMode.DEFAULT);      }    }    catch (Exception e)    {}    finally    {      cursor.close();    }    return valueSet;  }  public static void deleteDB(String key)  {    try    {      DatabaseEntry theKey = new DatabaseEntry(key.getBytes("UTF-8"));      myDatabase.delete(null, theKey);    }    catch (Exception e)    {}  }  // For debugging
+  public static void printDB()  {    Cursor cursor = null;    try    {      DatabaseEntry foundKey = new DatabaseEntry();      DatabaseEntry foundData = new DatabaseEntry();      cursor = myDatabase.openCursor(null, null);      cursor.getFirst(foundKey, foundData, LockMode.DEFAULT);      do      {        String keyString = new String(foundKey.getData(), "UTF-8");        String dataString = new String(foundData.getData(), "UTF-8");        System.out.println("<" + keyString + ", " + dataString + ">");      }      while (cursor.getNext(foundKey, foundData, LockMode.DEFAULT) == OperationStatus.SUCCESS);    }    catch (Exception e)    {}    finally    {      cursor.close();    }  }  // For DB error handling and drop table query
+  public static void deleteTable(String tblName)  {    Cursor cursor = null;    try    {      DatabaseEntry colDef = new DatabaseEntry((tblName + " @column definition").getBytes("UTF-8"));      DatabaseEntry priKey = new DatabaseEntry((tblName + " @primary key").getBytes("UTF-8"));      DatabaseEntry forKey = new DatabaseEntry((tblName + " @foreign key").getBytes("UTF-8"));      myDatabase.delete(null, colDef);      myDatabase.delete(null, priKey);      myDatabase.delete(null, forKey);    }    catch (Exception e)    {}  }}
+
+PARSER_END(SimpleDBMS)
+
+// Checking Functions
+// Get column definition from DB and check duplicate columns
+boolean CheckDuplicateColumnDef(String tblName) :{}{  {    Vector<String> tmp = new Vector<String>();    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);    StringTokenizer st = new StringTokenizer(colDef, delim);    while (st.hasMoreTokens())    {      String colName = st.nextToken();      String colType = st.nextToken();
+      if (tmp.contains(colName))      {
+        return true;      }      else      {        tmp.addElement(colName);      }    }    return false;  }}// Get table names from DB and check whether input table name exists in DBboolean CheckTableExistence(String tblName) :{}{  {    Vector<String> tables = myDB.getDB("@table name");    return tables.contains(tblName);  }}// Get primary key definition from this table and check whether it occurs more than one timesboolean CheckDuplicatePrimaryKeyDef(String tblName) :{}{  {    Vector<String> priKeys = myDB.getDB(tblName + " @primary key");    return priKeys.size() > 1;  }}// Get primary key and foreign key definition from this table and check whether column names of this definition didn't occur in DBString CheckNonExistingColumnDef(String tblName) :{}{  {    Vector<String> priKeys = myDB.getDB(tblName + " @primary key");    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    Vector<String> colNames = new Vector<String>();    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);    StringTokenizer st = new StringTokenizer(colDef, delim);    while (st.hasMoreTokens())    {      String colName = st.nextToken();      String colType = st.nextToken();      colNames.addElement(colName);    }    // Check primary key definition
+    if (priKeys.size() > 0)    {      String priKeyStr = priKeys.elementAt(0);      StringTokenizer st2 = new StringTokenizer(priKeyStr, delim);      while (st2.hasMoreTokens())      {        String colName = st2.nextToken();        if (!colNames.contains(colName))        {          return colName;        }      }    }    // Check foreign key definition
+    for (int i = 0; i < forKeys.size(); i++)    {      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st3 = new StringTokenizer(forKeyStr, delim);      while (st3.hasMoreTokens())      {        String colName = st3.nextToken();        if (colName.contains("references"))        {          break;        }        else if (!colNames.contains(colName))        {          return colName;        }      }    }    return null;  }}// Get referenced table names from this table and check whether those referenced tables are really existboolean CheckReferenceTableExistence(String tblName) :{}{  {    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    Vector<String> tblNames = myDB.getDB("@table name");    String refTblName = "";    for (int i = 0; i < forKeys.size(); i++)    {      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st = new StringTokenizer(forKeyStr, delim);      while (st.hasMoreTokens())      {        refTblName = st.nextToken();        if (refTblName.contains("references"))        {          refTblName = refTblName.substring(12);          break;        }      }      if (!tblNames.contains(refTblName))      {        return true;      }    }    return false;  }}// Get referenced columns from this table and check whether these columns are not primary key of referenced tableboolean CheckReferenceNonPrimaryKey(String tblName) :{}{  {    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    String refTblName = "";    for (int i = 0; i < forKeys.size(); i++)    {      // Get referenced columns      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st = new StringTokenizer(forKeyStr, delim);      Vector<String> refCols = new Vector<String>();      Vector<String> refPriKeyCols = new Vector<String>();      boolean isRefCol = false;      while (st.hasMoreTokens())      {        String tmpstr = st.nextToken();        if (tmpstr.contains("references"))        {          refTblName = tmpstr.substring(12);          isRefCol = true;          continue;        }        else if (isRefCol)        {          String refColName = tmpstr;          refCols.addElement(refColName);        }      }      Vector<String> refPriKeys = myDB.getDB(refTblName + " @primary key");      if (refPriKeys.size() > 0)      {        // Get primary key of referenced table        String refPriKeyStr = refPriKeys.elementAt(0);        StringTokenizer st2 = new StringTokenizer(refPriKeyStr, delim);        while (st2.hasMoreTokens())        {          String refPriKeyColName = st2.nextToken();          refPriKeyCols.addElement(refPriKeyColName);        }      }      // Check whether all of referenced columns are primary key      for (int j = 0; j < refCols.size(); j++)      {        if (!refPriKeyCols.contains(refCols.elementAt(j)))        {          return true;        }      }    }    return false;  }}// Get referenced columns from this table and check whether these columns are really exist in referenced tableboolean CheckReferenceColumnExistence(String tblName) :{}{  {    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    String refTblName = "";    for (int i = 0; i < forKeys.size(); i++)    {      // Get referenced columns      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st = new StringTokenizer(forKeyStr, delim);      Vector<String> refCols = new Vector<String>();      boolean isRefCol = false;      while (st.hasMoreTokens())      {        String tmpstr = st.nextToken();        if (tmpstr.contains("references"))        {          refTblName = tmpstr.substring(12);          isRefCol = true;          continue;        }        else if (isRefCol)        {          String refColName = tmpstr;          refCols.addElement(refColName);        }      }      String refRealColDefStr = myDB.getDB(refTblName + " @column definition").elementAt(0);      Vector<String> refRealColNames = new Vector<String>();      StringTokenizer st2 = new StringTokenizer(refRealColDefStr, delim);      // Get columns of referenced table      while (st2.hasMoreTokens())      {        String colName = st2.nextToken();        String colType = st2.nextToken();        refRealColNames.addElement(colName);      }      // Check whether all of referenced columns exist in referenced table      for (int j = 0; j < refCols.size(); j++)      {        if (!refRealColNames.contains(refCols.elementAt(j)))        {          return true;        }      }    }    return false;  }}// Get type of referenced columns and referencing columns and check whether types of both columns are sameboolean CheckReferenceType(String tblName) :{}{  {    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    for (int i = 0; i < forKeys.size(); i++)    {      // Get referenced columns and referencing columns      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st = new StringTokenizer(forKeyStr, delim);      Vector<String> forCols = new Vector<String>();      Vector<String> refCols = new Vector<String>();      String refTblName = "";      boolean isRefCol = false;      while (st.hasMoreTokens())      {        String tmpstr = st.nextToken();        if (tmpstr.contains("references"))        {          refTblName = tmpstr.substring(12);          isRefCol = true;          continue;        }        else if (isRefCol)        {          String refColName = tmpstr;          refCols.addElement(refColName);        }        else        {          String forColName = tmpstr;          forCols.addElement(forColName);        }      }      // If number of referenced columns and referencing columns are different, type error      if (refCols.size() != forCols.size())      {        return true;      }      // Check type of these columns one by one      else      {        for (int j = 0; j < refCols.size(); j++)        {          String forColType = GetColumnType(tblName, forCols.elementAt(j));          String refColType = GetColumnType(refTblName, refCols.elementAt(j));          if (!forColType.equals(refColType))          {            return true;          }        }      }    }    return false;  }}// Get table names of DB and check whether this table existsboolean CheckNoSuchTable(String tblName) :{}{  {    Vector<String> tblNames = myDB.getDB("@table name");    return !tblNames.contains(tblName);  }}// Get referenced table names of DB and check whether this table is referenced by other tableboolean CheckDropReferencedTable(String refTblName) :{}{  {    Vector<String> tblNames = myDB.getDB("@table name");    for (int i = 0; i < tblNames.size(); i++)    {      Vector<String> forKeys = myDB.getDB(tblNames.elementAt(i) + " @foreign key");      for (int j = 0; j < forKeys.size(); j++)      {        String forKeyStr = forKeys.elementAt(j);        StringTokenizer st = new StringTokenizer(forKeyStr, delim);        String tmpTbl = "";        while (st.hasMoreTokens())        {          String tmp = st.nextToken();          if (tmp.contains("references"))          {            tmpTbl = tmp.substring(12);            break;          }        }        if (tmpTbl.equals(refTblName))        {          return true;        }      }    }    return false;  }}// Check whether there is no tableboolean CheckShowTablesNoTable() :{}{  {    Vector<String> tblNames = myDB.getDB("@table name");    return (tblNames.size() == 0);  }}// Error Functions
+void DuplicateColumnDefError(String tblName) :{}{  {    System.out.println("Create table has failed: column definition is duplicated");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void TableExistenceError() :{}{  {    System.out.println("Create table has failed: table with the same name already exist");    handleDBError(parser);  }}void CharLengthError() :{}{  {    System.out.println("Char length should be > 0");    handleDBError(parser);  }}void DuplicatePrimaryKeyDefError(String tblName) :{}{  {    System.out.println("Create table has failed: primary key definition is duplicated");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void NonExistingColumnDefError(String tblName, String colName) :{}{  {    System.out.println("Create table has failed: '" + colName + "' does not exists in column definition");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void ReferenceTableExistenceError(String tblName) :{}{  {    System.out.println("Create table has failed: foreign key references non existing table");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void ReferenceNonPrimaryKeyError(String tblName) :{}{  {    System.out.println("Create table has failed: foreign key references non primary key column");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void ReferenceColumnExistenceError(String tblName) :{}{  {    System.out.println("Create table has failed: foreign key references non existing column");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void ReferenceTypeError(String tblName) :{}{  {    System.out.println("Create table has failed: foreign key references wrong type");    myDB.deleteTable(tblName);    handleDBError(parser);  }}void NoSuchTable() :{}{  {    System.out.println("No such table");    handleDBError(parser);  }}void DropReferencedTableError(String tblName) :{}{  {    System.out.println("Drop table has failed: '" + tblName + "' is referenced by other table");    handleDBError(parser);  }}void ShowTablesNoTable() :{}{  {    System.out.println("There is no table");    handleDBError(parser);  }}// Utility Functions
+// Get type of column
+String GetColumnType(String tblName, String colName) :{}{  {    String colDefStr = myDB.getDB(tblName + " @column definition").elementAt(0);    StringTokenizer st = new StringTokenizer(colDefStr, delim);    while (st.hasMoreTokens())    {      String _colName = st.nextToken();      String colType = st.nextToken();      if (colName.equals(_colName))      {        StringTokenizer st2 = new StringTokenizer(colType, "*");        return st2.nextToken();      }    }    return null;  }}// Change columns of primary key to not null
+void ChangeToNotNull(String tblName) :{}{  {    Vector<String> priKeys = myDB.getDB(tblName + " @primary key");    if (priKeys.size() > 0)    {      // Get primary keys      Vector<String> priCols = new Vector<String>();      String priKeyStr = priKeys.elementAt(0);      String colDefStr = myDB.getDB(tblName + " @column definition").elementAt(0);      myDB.deleteDB(tblName + " @column definition");      StringTokenizer st = new StringTokenizer(priKeyStr, delim);      while (st.hasMoreTokens())      {        priCols.addElement(st.nextToken());      }      StringTokenizer st2 = new StringTokenizer(colDefStr, delim);      String newColDef = "";      // Change type of primary keys to not null by deleting and re-inserting primary key data
+      while (st2.hasMoreTokens())      {        String colName = st2.nextToken();        String colType = st2.nextToken();        StringTokenizer st3 = new StringTokenizer(colType, "*");        String realColType = st3.nextToken();        if (priCols.contains(colName) && !st3.hasMoreTokens())        {          newColDef += "|" + colName + "|" + realColType + "*not null";        }        else        {          newColDef += "|" + colName + "|" + colType;        }      }      myDB.putDB(tblName + " @column definition", newColDef.substring(1));    }  }}// Perform drop table queryvoid DropTable(String tblName) :{}{  {    myDB.deleteTable(tblName);    myDB.deleteDB("@table name");    tblNameList.remove(tblName);    for (int i = 0; i < tblNameList.size(); i++)    {      myDB.putDB("@table name", tblNameList.elementAt(i));    }  }}// Perform show tables queryvoid ShowTables() :{}{  {    Vector<String> tblNames = myDB.getDB("@table name");    System.out.println("-------------------------");    for (int i = 0; i < tblNames.size(); i++)    {      System.out.println(tblNames.elementAt(i));    }    System.out.println("-------------------------");  }}// Check whether given column is primary key column
+boolean IsPrimaryKey(String tblName, String colName) :{}{  {    Vector<String> priKeys = myDB.getDB(tblName + " @primary key");    if (priKeys.size() > 0)    {      String priKeyStr = priKeys.elementAt(0);      StringTokenizer st = new StringTokenizer(priKeyStr, delim);      while (st.hasMoreTokens())      {        String tmp = st.nextToken();        if (tmp.equals(colName))        {          return true;        }      }    }    return false;  }}// Check whether given column is foreign key columnboolean IsForeignKey(String tblName, String colName) :{}{  {    Vector<String> forKeys = myDB.getDB(tblName + " @foreign key");    for (int i = 0; i < forKeys.size(); i++)    {      String forKeyStr = forKeys.elementAt(i);      StringTokenizer st = new StringTokenizer(forKeyStr, delim);      while (st.hasMoreTokens())      {        String tmp = st.nextToken();        if (tmp.contains("references"))        {          break;        }        else if (tmp.equals(colName))        {          return true;        }      }    }    return false;  }}// Perform desc query
+void Describe(String tblName) :{}{  {    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);    StringTokenizer st = new StringTokenizer(colDef, delim);    System.out.println("------------------------------------------------------------");    System.out.println("table_name [" + tblName + "]");    System.out.printf("%-25s%-15s%-10s%-10s\n", "column_name", "type", "null", "key");    while (st.hasMoreTokens())    {      String colName = st.nextToken();      String colType = st.nextToken();      boolean isNotNull = false;      boolean isPriKey = IsPrimaryKey(tblName, colName);      boolean isForKey = IsForeignKey(tblName, colName);      StringTokenizer st2 = new StringTokenizer(colType, "*");      String realColType = st2.nextToken();      if (st2.hasMoreTokens())      {        isNotNull = true;      }      System.out.printf("%-25s%-15s", colName, realColType);      if (isNotNull)      {        System.out.printf("%-10s", "N");      }      else      {        System.out.printf("%-10s", "Y");      }      if (isPriKey && isForKey)      {        System.out.printf("%-10s\n", "PRI/FOR");      }      else if (isPriKey)      {        System.out.printf("%-10s\n", "PRI");      }      else if (isForKey)      {        System.out.printf("%-10s\n", "FOR");      }      else      {        System.out.print("\n");      }    }    System.out.println("------------------------------------------------------------");  }}
+
+// Success Functions
+void CreateTableSuccess() :{}{  {    System.out.println("'" + createTblName + "' table is created");  }}void DropSuccess() :{}{  {    System.out.println("'" + dropTblName + "' table is dropped");  }}
+void InsertSuccess() :
+{}
+{
+  {
+    System.out.println("The row is inserted");
+  }
+}
+void DeleteSuccess() :
+{}
+{
+  {
+    System.out.println();
+  }
+}
+
+// Parsing Functions
+void Command() :
+{}
+{
+  QueryList()
+}
+
+void QueryList() :{  int i;}{  (    i = Query()    (      (        < SEMICOLON >        {          Success(i);        }      )    |      (        (          ";\r"        | ";\n"        )        {          Success(i);          System.out.print("DB_2012-11249 > ");        }      )    )  )+}int Query() :{  int i;}{  (    i = CreateTableQuery()  | i = DropTableQuery()  | i = ShowTablesQuery()  | i = DescQuery()  | i = SelectQuery()  | i = InsertQuery()  | i = DeleteQuery()
+  | i = RecordsQuery()
+  | i = DeleteatQuery()  | i = ExitQuery()  )  {    return i;  }}//jaewan start
+// helper query
+// print all records of table
+// ex) records student;
+int RecordsQuery() :
+{ String tblName; }
+{
+  < RECORDS > tblName = TableName()
+  {
+    showRecords(tblName);
+    return 500;
+  }
+}
+
+void showRecords(String tblName) :
+{}
+{
+  {
+    Vector<String> records = myDB.getDB(tblName + " @records");
+    System.out.println(tblName + "'s records start");
+    for(int i=0; i<records.size(); i++) {
+      System.out.println(records.get(i));
+    }
+    System.out.println("#of records: " + records.size());
+    System.out.println(tblName + "'s records end");
+    return;
+  }
+}
+// helper query
+// delete nth records at table
+// ex)deleteat student +3;
+int DeleteatQuery() :
+{
+  String tblName;
+  Token t;
+}
+{
+  < DELETE_AT > tblName = TableName()
+  t = < INT_VALUE >
+  {
+    deleteAt(tblName, t.image.toLowerCase());
+    return 500;
+  }
+}
+
+void deleteAt(String tblName, String index) :
+{}
+{
+  {
+	int deleteIndex = Integer.parseInt(index);
+	Vector<String> records = myDB.getDB(tblName + " @records");
+	myDB.deleteDB(tblName + " @records");
+	for(int i=0; i<records.size(); i++) {
+	  if(i != deleteIndex) {
+	    myDB.putDB(tblName + " @records", records.elementAt(i));
+	  }
+	}
+	System.out.println("delete " + deleteIndex + "th row completed");
+  }
+}
+
+//jaewan endint ExitQuery() :{}{  < EXIT >  {    return - 1;  }}int CreateTableQuery() :{  String tblName;  String colName;}{  < CREATE_TABLE > tblName = TableName()  {    if (CheckTableExistence(tblName))    {      TableExistenceError();    }  }  TableElementList(tblName)  {    myDB.putDB(tblName + " @column definition", tmpColDef.substring(1));    tmpColDef = "";    tmpPriKey = "";    tmpForKey = "";    if (CheckDuplicateColumnDef(tblName))    {      DuplicateColumnDefError(tblName);    }    else if (CheckDuplicatePrimaryKeyDef(tblName))    {      DuplicatePrimaryKeyDefError(tblName);    }    else if ((colName = CheckNonExistingColumnDef(tblName)) != null)    {      NonExistingColumnDefError(tblName, colName);    }    else if (CheckReferenceTableExistence(tblName))    {      ReferenceTableExistenceError(tblName);    }    else if (CheckReferenceColumnExistence(tblName))    {      ReferenceColumnExistenceError(tblName);    }    else if (CheckReferenceNonPrimaryKey(tblName))    {      ReferenceNonPrimaryKeyError(tblName);    }    else if (CheckReferenceType(tblName))    {      ReferenceTypeError(tblName);    }    ChangeToNotNull(tblName);    createTblName = tblName;    myDB.putDB("@table name", tblName);    tblNameList.addElement(tblName);    return 0;  }}void TableElementList(String tblName) :{}{  < LEFT_PAREN > TableElement(tblName)  (    < COMMA > TableElement(tblName)  )*  < RIGHT_PAREN >}void TableElement(String tblName) :{}{  ColumnDefinition()| TableConstraintDefinition(tblName)}void ColumnDefinition() :{  String colName = "";  String dataType = "";  String notNull = "";}{  (    LOOKAHEAD(ColumnName() DataType() < NOT_NULL >)    (      colName = ColumnName() dataType = DataType() < NOT_NULL >      {        notNull = "*not null";      }    )  |    (      colName = ColumnName() dataType = DataType()    )  )  (  {    tmpColDef += delim + colName + delim + dataType + notNull;  }  )}void TableConstraintDefinition(String tblName) :{}{  PrimaryKeyConstraint(tblName)| ReferentialKeyConstraint(tblName)}void PrimaryKeyConstraint(String tblName) :{}{  < PRIMARY_KEY > ColumnNameList(true)  {    myDB.putDB(tblName + " @primary key", tmpPriKey.substring(1));
+  }}void ReferentialKeyConstraint(String tblName) :{  String referedTblName;
+  String tempstr;
+  String[] tmp_strs;}{  < FOREIGN_KEY > ColumnNameList(false) < REFERENCES > referedTblName = TableName()  {    tmpForKey += delim + "@references&" + referedTblName;  }  ColumnNameList(false)  {    myDB.putDB(tblName + " @foreign key", tmpForKey.substring(1));
+    tmpForKey = "";
+  }}void ColumnNameList(boolean isPrimaryKey) :{  String colName;}{  < LEFT_PAREN > colName = ColumnName()  {    if (isPrimaryKey)    {      tmpPriKey += delim + colName;    }    else    {      tmpForKey += delim + colName;    }  }  (    < COMMA > colName = ColumnName()    {      if (isPrimaryKey)      {        tmpPriKey += delim + colName;      }      else      {        tmpForKey += delim + colName;      }    }  )*  < RIGHT_PAREN >}String DataType() :{  Token size;}{  < INT >  {    return "int";  }|  (    < CHAR > < LEFT_PAREN >    (      size = < INT_VALUE >    | size = < DIGIT >    )    < RIGHT_PAREN >    {      if (Integer.parseInt(size.image) <= 0) CharLengthError();      return "char(" + Integer.toString(Integer.parseInt(size.image)) + ")";    }  )| < DATE >  {    return "date";  }}String TableName() :{  Token t;}{  (    t = < LEGAL_IDENTIFIER >    {      if (IsKeyword(t.image))      {        throw new ParseException();      }    }  | t = < ALPHABET >  )  {    return t.image.toLowerCase();  }}String ColumnName() :{  Token t;}{  (    t = < LEGAL_IDENTIFIER >    {      if (IsKeyword(t.image))      {        throw new ParseException();      }    }  | t = < ALPHABET >  )  {    return t.image.toLowerCase();  }}int DropTableQuery() :{  String tblName;}{  < DROP_TABLE > tblName = TableName()  {    if (CheckNoSuchTable(tblName))    {      NoSuchTable();    }    else if (CheckDropReferencedTable(tblName))    {      DropReferencedTableError(tblName);    }    else    {      dropTblName = tblName;      DropTable(tblName);    }    return 1;  }}int ShowTablesQuery() :{}{  < SHOW_TABLES >  {    if (CheckShowTablesNoTable())    {      ShowTablesNoTable();    }    else    {      ShowTables();    }    return 2;  }}int DescQuery() :{  String tblName;}{  < DESC > tblName = TableName()  {    if (CheckNoSuchTable(tblName))    {      NoSuchTable();    }    else    {      Describe(tblName);    }    return 3;  }}
+
+String CheckSelectTableExistenceError(TableExpression tbe) : { }
+{
+  {
+    ArrayList<String> trl = tbe.tableReferenceList;
+    Vector<String> existTblNames = myDB.getDB("@table name");
+    for(String tblName : trl) {
+      if(!existTblNames.contains(tblName)) { return tblName; }
+    }
+
+    return null;
+  }
+}
+
+
+String CheckSelectColumnResolveError(ArrayList<String> scl, TableExpression tbe) : { }
+{
+  {
+    if(scl.get(0).equals("*")) { return null; }
+    ArrayList<String> trl = tbe.tableReferenceList;
+    
+    for(String colName : scl) {
+      // colName = < tableName >.< columnName >
+      if(split(colName, ".").size() == 2) {
+		String tn = split(colName, ".").get(0);
+		String cn = split(colName, ".").get(1);
+		
+		if(!trl.contains(tn)) { return colName; }
+
+		String colDef = myDB.getDB(tn + " @column definition").elementAt(0);
+		ArrayList<String> existColumns = getColumns(colDef, "name");
+		if(!existColumns.contains(cn)) { return colName; }
+      }
+      // colName = < columnName >
+      else {
+        int refCnt = findColumnMatchCount(trl, null, colName);
+        if(refCnt != 1) { return colName; }
+      }
+    }
+
+    return null;
+  }
+}
+
+ArrayList<String> _cartesian(ArrayList<String> rec1, ArrayList<String> rec2) : { }
+{
+  {
+	ArrayList<String> result = new ArrayList<String>();
+	for(String s1 : rec1) {
+	  for(String s2 : rec2) {
+	    result.add(s1 + s2);
+	  }
+	}
+
+	return result;
+  }
+}
+
+ArrayList<String> vectorToList(Vector<String> v) : { }
+{
+  {
+    ArrayList<String> result = new ArrayList<String>();
+    for(String s : v) { result.add(s); }
+    return result;
+  }
+}
+
+ArrayList<String> cartesian(ArrayList<String> tblNames) : { }
+{
+  {
+    ArrayList<String> result;
+    Vector<String> records = myDB.getDB(tblNames.get(0) + " @records");
+    result = vectorToList(records);
+    if(tblNames.size() == 1) { return result; }
+    
+    for(int i=1; i<tblNames.size(); i++) {
+      String tblName = tblNames.get(i);
+      Vector<String> _records = myDB.getDB(tblName + " @records");
+      ArrayList<String> temp = vectorToList(_records);
+      result = _cartesian(result, temp);
+    }
+
+    return result;
+  }
+}
+
+int findIndex(ArrayList<String> tblNames, String columnAux, String columnName) : { }
+{
+  {
+    if(columnAux != null) {
+      String tblName = split(columnAux, ".").get(0);
+      String colName = split(columnAux, ".").get(1);
+      int innerIndex = 0;
+      int resultIndex = 0;
+            
+      String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+      ArrayList<String> existColumns = getColumns(colDef, "name");
+      // find inner index
+      for(int i=0; i<existColumns.size(); i++) {
+        if(existColumns.get(i).equals(colName)) {
+          innerIndex = i;
+          break;
+        }
+      }
+
+      for(int i=0; i<tblNames.size(); i++) {
+        if(!tblNames.get(i).equals(tblName)) {
+          String _colDef = myDB.getDB(tblNames.get(i) + " @column definition").elementAt(0);
+          ArrayList<String> _existColumns = getColumns(_colDef, "name");
+          resultIndex += _existColumns.size();
+        }
+        else { break; }
+      }
+
+      return resultIndex + innerIndex;
+      
+    }
+    else {
+      int resultIndex = 0;
+      for(String tblName : tblNames) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+        for(int i=0; i<existColumns.size(); i++) {
+          if(existColumns.get(i).equals(columnName)) {
+            break;
+          }
+          else {
+            resultIndex++;
+          }
+        }
+      }
+
+      return resultIndex;
+    }
+  }
+}
+
+String coToValue(ArrayList<String> values, ArrayList<String> tableNames, CompOperand co) : { }
+{
+  {
+    if(co.comparableValue != null) {
+      return co.comparableValue;
+    }
+    else {
+      int index = findIndex(tableNames, co.compOperandAux, co.columnName);
+      return values.get(index);
+    }
+  }
+}
+
+String evalWithPredicate(ArrayList<String> values, Predicate p, ArrayList<String> tableNames) : { }
+{
+  {
+    //int findIndex(ArrayList<String> tblNames, String columnAux, String columnName)
+
+	// comparison predicate
+    if(p.cp != null) {
+      CompOperand co1 = p.cp.co1;
+      CompOperand co2 = p.cp.co2;
+      String compOp = p.cp.compOp;
+      
+      String value1 = coToValue(values, tableNames, co1);
+      String value2 = coToValue(values, tableNames, co2);
+      // compare value1, value2
+      if(value1.equals("null") || value2.equals("null")) {
+		// unknown 
+        return "unknown";
+      } else {
+        String valueType = split(value1, ":").get(0);
+        String value1Value = split(value1, ":").get(1);
+        String value2Value = split(value2, ":").get(1);
+        
+        if(valueType.equals("num")) {
+          int _value1 = Integer.parseInt(value1Value);
+          int _value2 = Integer.parseInt(value2Value);
+          if(compOp.equals("<")) { return _value1 < _value2 ? "true" : "false"; }
+          else if(compOp.equals(">")) { return _value1 > _value2 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return _value1 <= _value2 ? "true" : "false"; }
+          else if(compOp.equals(">=")) { return _value1 >= _value2 ? "true" : "false"; }
+          else if(compOp.equals("!=")) { return _value1 != _value2 ? "true" : "false"; }
+          else { return _value1 == _value2 ? "true" : "false"; }
+        }
+
+        else if(valueType.equals("str")) {
+          // trim ''
+          String _value1 = value1Value.substring(1, value1Value.length());
+          String _value2 = value2Value.substring(1, value2Value.length());
+    
+          int compResult = _value1.compareTo(_value2);
+          if(compOp.equals("<")) { return compResult < 0 ? "true" : "false";}
+          else if(compOp.equals(">")) { return compResult > 0 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return compResult <= 0 ? "true" : "false";}
+          else if(compOp.equals(">=")) { return compResult >= 0 ? "true" : "false";}
+          else if(compOp.equals("!=")) { return compResult != 0 ? "true" : "false";}
+          else { return compResult == 0 ? "true" : "false";}
+        }
+
+        else if(valueType.equals("date")) {
+          int compResult = value1.compareTo(value2);
+          if(compOp.equals("<")) { return compResult < 0 ? "true" : "false";}
+          else if(compOp.equals(">")) { return compResult > 0 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return compResult <= 0 ? "true" : "false";}
+          else if(compOp.equals(">=")) { return compResult >= 0 ? "true" : "false";}
+          else if(compOp.equals("!=")) { return compResult != 0 ? "true" : "false";}
+          else { return compResult == 0 ? "true" : "false";}
+        }
+        // value type error case
+        else {
+          //System.out.println("evalRecords, comparable value type error");
+          return "false";
+        }
+      }
+    }
+    // null predicate
+    else {
+      String nullOperation = p.np.nullOperation;
+      int index = findIndex(tableNames, p.np.nullPredicateAux, p.np.columnName);
+      String value = values.get(index);
+
+      if(nullOperation.equals("is null")) {
+        return value.equals("null") ? "true" : "false";
+      }
+      else {
+        return !value.equals("null") ? "true" : "false";
+      }
+    }
+  }
+}
+
+void realSelect(ArrayList<String> selectedColumnList, TableExpression tbe) : { }
+{
+  {
+    ArrayList<String> trl = tbe.tableReferenceList;
+    BooleanValueExpression bve = tbe.bve;
+    ArrayList<String> bigRecords = cartesian(trl);
+    ArrayList<String> result = new ArrayList<String>();
+    
+    for(String record : bigRecords) {
+      ArrayList<String> values = split(record, "|");
+      String bveResult;
+      
+      if(bve == null) { bveResult = "true"; }
+      else { bveResult = bve.evalSel(values, trl); }
+
+      if(bveResult.equals("true")) { result.add(record); }
+    }
+
+    projection(result, selectedColumnList, trl);
+    return;
+  }
+}
+
+ArrayList<Integer> projIndex(ArrayList<String> scl, ArrayList<String> trl) : { }
+{
+  {
+    ArrayList<Integer> result = new ArrayList<Integer>();
+    for(String selected : scl) {
+      ArrayList<String> temp = split(selected, ".");
+      if(temp.size() == 2) { result.add(findIndex(trl, selected, null)); }
+      else { result.add(findIndex(trl, null, selected)); }
+    }
+
+    return result;
+  }
+}
+
+
+void projection(ArrayList<String> result, ArrayList<String> scl, ArrayList<String> trl) : { }
+{
+  {
+    // print all
+    if(scl.get(0).equals("*")) {
+      // 1st line
+      for(String tblName : trl) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+        
+        for(String colName : existColumns) { System.out.print("+--------------------");}
+      }
+      System.out.println("+");
+
+
+      // colName duplicate check helper
+      HashMap<String, Integer> colNameHash = new HashMap<String, Integer>();
+      ArrayList<String> commonColNames = new ArrayList<String>();
+      for(String tblName : trl) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+
+        for(String colName : existColumns) {
+          if(colNameHash.get(colName) == null) { colNameHash.put(colName, 1); }
+          else { int tempCnt = colNameHash.get(colName); colNameHash.put(colName, tempCnt+1); }
+        }
+      }
+      
+      // 2nd line, column names;
+      for(String tblName : trl) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+
+        for(String colName : existColumns) {
+          int len = colName.length();
+          
+          if(colNameHash.get(colName) > 1) { System.out.print("| " + tblName + "." + colName); len += tblName.length()+1; }
+          else { System.out.print("| " + colName); }
+          for(int i=0; i<19-len; i++) { System.out.print(" "); }
+        }
+      }
+      System.out.println("|");
+
+      // 3rd line
+      for(String tblName : trl) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+        
+        for(String colName : existColumns) { System.out.print("+--------------------");}
+      }
+      System.out.println("+");
+
+
+      // records
+      for(String s : result) {
+        ArrayList<String> values = split(s, "|");
+        for(int i=0; i<values.size(); i++) {
+          String value = values.get(i);
+          int len = value.length();
+          System.out.print("| " + value);
+          for(int j=0; j<19-len; j++) { System.out.print(" "); }
+        }
+        System.out.println("|");
+      }
+
+
+      // last line
+      for(String tblName : trl) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumns = getColumns(colDef, "name");
+        
+        for(String colName : existColumns) { System.out.print("+--------------------");}
+      }
+      System.out.println("+");
+      
+    }
+	// print scl
+    else {
+      ArrayList<Integer> index = projIndex(scl, trl);
+      // 1st line
+      for(int i=0; i<index.size(); i++) { System.out.print("+--------------------"); }
+      System.out.println("+");
+
+      // 2nd lint
+      for(String selected : scl) {
+        System.out.print("| " + selected);
+        int len = selected.length();
+        for(int i=0; i<19-len; i++) { System.out.print(" "); }
+      }
+      System.out.println("|");
+
+      // 3rd line
+      for(int i=0; i<index.size(); i++) { System.out.print("+--------------------"); }
+      System.out.println("+");
+
+      // records
+      for(String s : result) {
+        ArrayList<String> values = split(s, "|");
+        for(int i=0; i<index.size(); i++) {
+          String value = values.get(index.get(i));
+          System.out.print("| " + value);
+          int len = value.length();
+          for(int j=0; j<19-len; j++) { System.out.print(" "); }
+        }
+        System.out.println("|");
+      }
+
+
+      // last line
+      for(int i=0; i<index.size(); i++) { System.out.print("+--------------------"); }
+      System.out.println("+");
+      
+    }
+
+    return;
+  }
+}
+int SelectQuery() :{ ArrayList<String> scl; TableExpression tbe;  String s; }{  < SELECT > scl = SelectList() tbe = TableExpression()  {
+    ArrayList<String> tblNames = tbe.tableReferenceList;
+    BooleanValueExpression bve = tbe.bve;
+    if((s = CheckSelectTableExistenceError(tbe)) != null) {
+      System.out.println("Selection has failed: '" + s + "' does not exist");
+      handleDBError(parser);
+    }
+    else if((s = CheckSelectColumnResolveError(scl, tbe)) != null) {
+      System.out.println("Selection has failed: fail to resolve '" + s + "'");
+      handleDBError(parser);
+    }
+    else if(CheckWhereTableNotSpecifiedError(tblNames, bve)) {
+		System.out.println("Where clause try to reference tables which are not specified");
+		handleDBError(parser);
+	}
+	else if(CheckWhereColumnNotExistError(tblNames, bve)) {
+		System.out.println("Where clause try to reference non existing column");
+		handleDBError(parser);
+	}
+	else if(CheckWhereAmbiguousReferenceError(tblNames, bve)) {
+		System.out.println("Where clause contains ambiguous reference");
+		handleDBError(parser);
+	}
+    else if(CheckWhereIncomparableError(tblNames, bve)) {
+		System.out.println("Where clause try to compare incomparable values");
+		handleDBError(parser);
+    }
+
+    // selece start
+    realSelect(scl, tbe);    return 4;  }}ArrayList<String> SelectList() :{
+  ArrayList<String> selectedColumnList = new ArrayList<String>();
+  String colName;
+}{  "*" { selectedColumnList.add("*"); return selectedColumnList; }|  (    colName = SelectedColumn() { selectedColumnList.add(colName); }    (      < COMMA > colName = SelectedColumn() { selectedColumnList.add(colName); }    )*
+    { return selectedColumnList; }  )}String SelectedColumn() :{ String colName; }{  LOOKAHEAD(SelectedColumnAux1())  colName = SelectedColumnAux1() { return colName; }| LOOKAHEAD(SelectedColumnAux2())  colName = SelectedColumnAux2() { return colName; }| LOOKAHEAD(SelectedColumnAux3())  colName = SelectedColumnAux3() { return colName; }| colName = ColumnName() { return colName; }}String SelectedColumnAux1() :{ String tn; String cn1; String cn2; }{  tn = TableName() < PERIOD > cn1 = ColumnName() < AS > cn2 = ColumnName()
+  { return tn + "." + cn1 + "@as@" + cn2; }}String SelectedColumnAux2() :{ String tn; String cn; }{  tn = TableName() < PERIOD > cn = ColumnName()
+  { return tn + "." + cn; }}String SelectedColumnAux3() :{ String cn1; String cn2;}{  cn1 = ColumnName() < AS > cn2 = ColumnName()
+  { return cn1 + "@as@" + cn2; }}TableExpression TableExpression() :{
+  TableExpression tbe = new TableExpression(null, null);
+  ArrayList<String> trl;
+  BooleanValueExpression bve;
+}{  LOOKAHEAD(FromClause() WhereClause())  trl = FromClause() bve = WhereClause() { tbe.tableReferenceList = trl; tbe.bve = bve; return tbe; }| trl = FromClause() { tbe.tableReferenceList = trl; return tbe; }}ArrayList<String> FromClause() :{ ArrayList<String> trl; }{  < FROM > trl = TableReferenceList() { return trl; }}ArrayList<String> TableReferenceList() :{
+  ArrayList<String> trl = new ArrayList<String>();
+  String tn;
+}{  tn = ReferedTable() { trl.add(tn); }  (    < COMMA > tn = ReferedTable() { trl.add(tn); }  )*
+  { return trl; }}String ReferedTable() :{ String tn1; String tn2; }{  LOOKAHEAD(TableName() < AS > TableName())  tn1 = TableName() < AS > tn2 = TableName() { return tn1 + "@as@" + tn2; }| tn1 = TableName() { return tn1; }}BooleanValueExpression WhereClause() :{ BooleanValueExpression bve; }{  < WHERE > bve = BooleanValueExpression() { return bve; }}BooleanValueExpression BooleanValueExpression() :{ BooleanTerm bt; BooleanValueExpression bve = new BooleanValueExpression(); }{  bt = BooleanTerm() { bve.bts.add(bt); }  (    < OR > bt = BooleanTerm() { bve.bts.add(bt); }  )*
+  { return bve; }}BooleanTerm BooleanTerm() :{ BooleanFactor bf; BooleanTerm bt = new BooleanTerm(); }{  bf = BooleanFactor() { bt.bfs.add(bf); }  (    < AND > bf = BooleanFactor() { bt.bfs.add(bf); }  )*
+  { return bt; }}BooleanFactor BooleanFactor() :{ BooleanFactor bf = new BooleanFactor(null, null); BooleanTest bt; }{  bt = BooleanTest() { bf.bt = bt; return bf; } | < NOT > bt = BooleanTest() { bf.not = "not"; bf.bt = bt; return bf; }}BooleanTest BooleanTest() :{ BooleanTest bt = new BooleanTest(null, null); Predicate p; BooleanValueExpression bve; }{  p = Predicate() { bt.p = p; return bt; }| bve = ParentehsizedBooleanExpression() { bt.bve = bve; return bt; }}BooleanValueExpression ParentehsizedBooleanExpression() :{ BooleanValueExpression bve; }{  < LEFT_PAREN > bve = BooleanValueExpression() < RIGHT_PAREN > { return bve; }}Predicate Predicate() :{ Predicate p = new Predicate(null, null); ComparisonPredicate cp; NullPredicate np; }{  LOOKAHEAD(ComparisonPredicate())  cp = ComparisonPredicate() { p.cp = cp; return p; }| np = NullPredicate() { p.np = np; return p; }}ComparisonPredicate ComparisonPredicate() :{ CompOperand co1; CompOperand co2; Token compOp; ComparisonPredicate cp = new ComparisonPredicate(null, null, null); }{  co1 = CompOperand() compOp = < COMP_OP > co2 = CompOperand() { cp.co1 = co1; cp.co2 = co2; cp.compOp = compOp.image; return cp; }}
+CompOperand CompOperand() :{ CompOperand co = new CompOperand(null, null, null); String s; }{  LOOKAHEAD(CompOperandAux())  s = CompOperandAux() { co.compOperandAux = s; return co; }| s = ColumnName() { co.columnName = s; return co; }| s = ComparableValue() { co.comparableValue = s; return co; }}String CompOperandAux() :{ String tblName; String colName;}{  tblName = TableName() < PERIOD > colName = ColumnName()
+  { return tblName + "." + colName; }}
+/* example
+num:+13
+num:-13
+date:2017-12-12
+str:cybl
+*/String ComparableValue() :{ Token t; }{  t = < DATE_VALUE > { return "date:" + t.image; }| t = < INT_VALUE > { return "num:" + t.image; }| t = < DIGIT > { return "num:" + t.image; }| t = < CHAR_STRING > { return "str:" + t.image; }
+}NullPredicate NullPredicate() :{ NullPredicate np = new NullPredicate(null, null, null); String npa; String nop; String colName; }{  LOOKAHEAD(NullPredicateAux())
+  npa = NullPredicateAux() nop = NullOperation() { np.nullPredicateAux = npa; np.nullOperation = nop; return np; }| colName = ColumnName() nop = NullOperation() { np.columnName = colName; np.nullOperation = nop; return np; }}String NullPredicateAux() :{String tblName; String colName;}{  tblName = TableName() < PERIOD > colName = ColumnName() { return tblName + "." + colName; }}String NullOperation() : {}{  < IS_NULL > { return "is null"; }| < IS_NOT_NULL > { return "is not null"; }}
+// helper function like split
+ArrayList<String> split(String s, String token) :
+{}
+{
+  {
+	ArrayList<String> result = new ArrayList<String>();
+    StringTokenizer st = new StringTokenizer(s, token);
+	
+	while(st.hasMoreTokens()) {
+	  result.add(st.nextToken());
+	}
+
+	return result;
+  }
+}
+
+// return column name list or column type list depending on nt("name", "type")
+ArrayList<String> getColumns(String colDef, String nt) :
+{}
+{
+  {
+    StringTokenizer st = new StringTokenizer(colDef, delim);
+	ArrayList<String> results = new ArrayList<String>();
+	while (st.hasMoreTokens()) { 
+      String colName = st.nextToken();
+      String colType = st.nextToken();
+
+	  if(nt.equals("name")) {
+		results.add(colName);
+	  } else if(nt.equals("type")) {
+		results.add(colType);
+	  } else {
+		return null;
+	  }
+    }
+
+    return results;
+  }
+}
+// return exist column's type from input column name
+// ex) inputColumnName : "student"
+// ex) existColumnType : "int*not null"
+// ex) return existColumnType
+String findExisttypeFromInput(String inputColumnName, ArrayList<String> existColumnNames, ArrayList<String> existColumnTypes) :
+{}
+{
+  {
+	for(int i=0; i<existColumnNames.size(); i++) {
+	  if(existColumnNames.get(i).equals(inputColumnName)) {
+		return existColumnTypes.get(i);
+	  }
+	}
+	return null;
+  }
+}
+/*
+String findExistnameFromInput(String inputColumnName, ArrayList<String> existColumnNames) :
+{}
+{
+  {
+	for(int i=0; i<existColumnNames.size(); i++) {
+	  if(existColumnNames.get(i).equals(inputColumnName)) {
+		return existColumnNames.get(i);
+	  }
+	}
+	return null;
+  }
+}
+*/
+
+// check if inputValue's type and column's type same
+// ex) colType : int*not null;
+// ex) inputValue : num:13, char:'jw'
+boolean isTypeSame(String colType, String inputValue) :
+{}
+{
+  {
+	String existRealType = split(colType, "*").get(0);
+	if(inputValue.equals("null")) { return true; }
+	else if((existRealType.contains("int") && !inputValue.substring(0,3).equals("num")) ||
+		 (existRealType.contains("char") && !inputValue.substring(0,3).equals("str")) ||
+		 (existRealType.contains("date") && !inputValue.substring(0,4).equals("date"))) {
+		 return false;
+	}
+	else { return true; }
+  }
+}
+
+boolean CheckInsertTypeMismatchError(String tblName, String colAndSrc) :
+{}
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+
+    if(existColumnNames.size() != existColumnTypes.size()) {
+		return true;
+    }
+    
+    String[] temp_strs = colAndSrc.split("/");
+	// no input column names
+    if(temp_strs.length == 1) {
+      //System.out.println("colAndSrc: " + colAndSrc.substring(1));
+      String[] inputValues = colAndSrc.substring(1).split("\\|");
+      //System.out.println("input values start------------------");
+      //System.out.println(inputValues[0]);
+      //System.out.println("input values end--------------------");
+      //System.out.println("existColumnNames size: " + existColumnNames.size());
+      if(existColumnNames.size() != inputValues.length) {
+		// case : no input column names and (# of inputValues != # of existColumnNames)
+		//System.out.println("jaewan, 111");
+		return true;
+      }
+      for(int i=0; i<existColumnTypes.size(); i++) {
+	  // case : same #of columnTypes and values , but existColumnTypes and inputValuetypes are different
+	    if(!isTypeSame(existColumnTypes.get(i), inputValues[i])) {
+				//System.out.println("i: " + i);
+		       //System.out.println("extistRealType: " + existRealType);
+		       //System.out.println("inputValues[i]: " + inputValues[i].substring(0,4));
+		  return true;
+	    }
+	  }
+	  return false;
+    }
+    
+	//exist explicit column names
+	else {
+	  String[] _inputColumnNames = temp_strs[0].substring(1).split("\\|");
+	  String[] _inputValues = temp_strs[1].substring(1).split("\\|");
+      ArrayList<String> inputColumnNames = new ArrayList<String>(Arrays.asList(_inputColumnNames));
+      ArrayList<String> inputValues = new ArrayList<String>(Arrays.asList(_inputValues));
+	  Set<String> inputColumnNamesSet = new HashSet<String>(inputColumnNames);
+
+	  if(inputColumnNamesSet.size() < inputColumnNames.size()){
+	    // duplicate exists in values column names
+	    //System.out.println("jaewan, 3333");
+	    return true;
+	  }
+	  // input columns > existing columns
+	  if(inputColumnNames.size() > existColumnTypes.size()) {
+		//System.out.println("jaewan, 4444");
+		return true;
+	  }
+	  // input columns != input values
+	  if(_inputColumnNames.length != _inputValues.length) {
+	    //System.out.println("jaewan, 5555");
+		return true;
+	  }
+
+	  for(int i=0; i<inputColumnNames.size(); i++) {
+		String colType = findExisttypeFromInput(inputColumnNames.get(i), existColumnNames, existColumnTypes);
+		// no column name exists such that input column name
+		if(colType == null) { return true; }
+		// exist column type and input value type mismatch
+		if(!isTypeSame(colType, inputValues.get(i))) {
+		     return true;
+		}
+	  }// for close
+      
+	  return false;
+	} // else close
+
+    
+    
+  }
+}
+
+String CheckInsertColumnNonNullableError(String tblName, String colAndSrc) :
+{}
+{
+  {
+	String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+
+    if(existColumnNames.size() != existColumnTypes.size()) {
+		//System.out.println("jaewan, #of col names and #of col type diff error");
+		return "jw";
+    }
+    
+    String[] temp_strs = colAndSrc.split("/");
+	// no input column names
+    if(temp_strs.length == 1) {
+      String[] _inputValues = colAndSrc.substring(1).split("\\|");
+      ArrayList<String> inputValues = new ArrayList<String>(Arrays.asList(_inputValues));
+      
+      for(int i=0; i<existColumnTypes.size(); i++) {
+        boolean notNull;
+		int existColumnTypeSize = split(existColumnTypes.get(i), "*").size();
+		// ex) int*not null(size == 2) or int(size == 1)
+		if(existColumnTypeSize == 1) { notNull = false; }
+		else { notNull = true; }
+
+		if(inputValues.get(i).equals("null") && notNull) {
+		  return existColumnNames.get(i);
+		}
+      }
+    } // if end
+    else {
+      String[] _inputColumnNames = temp_strs[0].substring(1).split("\\|");
+	  String[] _inputValues = temp_strs[1].substring(1).split("\\|");
+      ArrayList<String> inputColumnNames = new ArrayList<String>(Arrays.asList(_inputColumnNames));
+      ArrayList<String> inputValues = new ArrayList<String>(Arrays.asList(_inputValues));
+
+      for(int i=0; i<inputColumnNames.size(); i++) {
+		String colType = findExisttypeFromInput(inputColumnNames.get(i), existColumnNames, existColumnTypes);
+		boolean notNull;
+        int colTypeSize = split(colType, "*").size();
+        if(colTypeSize == 1) { notNull = false; }
+        else { notNull = true; }
+
+        if(inputValues.get(i).equals("null") && notNull) {
+          return inputValues.get(i);
+        }
+      }
+    } // else end
+
+    return null;
+  }
+}
+
+String CheckInsertColumnExistenceError(String tblName, String colAndSrc) :
+{}
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+
+	String[] temp_strs = colAndSrc.split("/");
+	// no input column names
+    if(temp_strs.length == 1) { return null; }
+    else {
+      String[] _inputColumnNames = temp_strs[0].substring(1).split("\\|");
+      ArrayList<String> inputColumnNames = new ArrayList<String>(Arrays.asList(_inputColumnNames));
+      for(int i=0; i<inputColumnNames.size(); i++) {
+		if(!existColumnNames.contains(inputColumnNames.get(i))) {
+		  return inputColumnNames.get(i);
+		}
+      }
+    } // else close
+    return null;
+  }
+}
+
+// change colAndSrc to complete form, and column orders are same to tblName
+String changeColAndSrc(String tblName, String colAndSrc) :
+{}
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+
+    String[] temp_strs = colAndSrc.split("/");
+    // no exist explicit column
+    if(temp_strs.length == 1) {
+      String result = "";
+      for(int i=0; i<existColumnNames.size(); i++) {
+        result = result + "|" + existColumnNames.get(i);
+      }
+      return result + "/" + colAndSrc;
+    }
+    // exist explicit column
+    else {
+      String[] _inputColumnNames = temp_strs[0].substring(1).split("\\|");
+	  String[] _inputValues = temp_strs[1].substring(1).split("\\|");
+      ArrayList<String> inputColumnNames = new ArrayList<String>(Arrays.asList(_inputColumnNames));
+      ArrayList<String> inputValues = new ArrayList<String>(Arrays.asList(_inputValues));
+      String resultColName = "";
+      String resultValue = "";
+      for(int i=0; i<existColumnNames.size(); i++) {
+		resultColName = resultColName + "|" + existColumnNames.get(i);
+        boolean matchFound = false;
+        for(int j=0; j<inputColumnNames.size(); j++) {
+          String existColName = existColumnNames.get(i);
+          String inputColName = inputColumnNames.get(j);
+          if(existColName.equals(inputColName)) {
+            matchFound = true;
+            resultValue = resultValue + "|" + inputValues.get(j);
+          }
+        } // inner for close
+
+        if(!matchFound) { resultValue = resultValue + "|" + "null"; }
+      } // outer for close
+
+      return resultColName + "/" + resultValue;
+    } // else close
+  }
+}
+
+// find pk Indices of tblName
+ArrayList<Integer> findPkIndex(String tblName) :
+{}
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> columnNames = getColumns(colDef, "name");
+    ArrayList<String> pkNames = split(myDB.getDB(tblName + " @primary key").elementAt(0), "|");
+    ArrayList<Integer> pkIndices = new ArrayList<Integer>();
+    for(int i=0; i<columnNames.size(); i++) {
+      for(int j=0; j<pkNames.size(); j++) {
+        if(columnNames.get(i).equals(pkNames.get(j))) {
+          pkIndices.add(i);
+          break;
+        }
+      }
+    }
+
+    return pkIndices;
+  }
+}
+
+boolean CheckInsertDuplicatePrimaryKeyError(String tblName, String changedColAndSrc) :
+{}
+{
+  {
+    /* not null and unique on primary key */
+	Vector<String> records = myDB.getDB(tblName + " @records");
+	ArrayList<Integer> pkIndices = findPkIndex(tblName);
+	ArrayList<String> inputValues = split(changedColAndSrc.split("/")[1], "|");
+	
+	// check not null on primary key column 
+	for(int i=0; i<pkIndices.size(); i++) {
+	  if(inputValues.get(pkIndices.get(i)).equals("null")) {
+	    return true;
+	  }
+	}
+	// check uniqueness on primary key
+	for(int i=0; i<records.size(); i++) {
+	  boolean isUnique = false;
+	  ArrayList<String> record = split(records.get(i), "|");
+	  for(int j=0; j<pkIndices.size(); j++) {
+	    // if just one column is different on pk columns, unique
+	    int pkIndex = pkIndices.get(j);
+	    if(!record.get(pkIndex).equals(inputValues.get(pkIndex))) {
+	      isUnique = true;
+	      break;
+	    }
+	  } // inner for close
+
+	  if(!isUnique) {
+	    //System.out.println("reason record: " + records.get(i));
+	    return true;
+	  }
+	}
+
+	// yeah, not null and unique
+	return false;
+	
+  }
+}
+
+//find indices of table's column from 'my' column names
+//assume 'my' column names all exist in table
+ArrayList<Integer> findColumnIndices(String tblName, ArrayList<String> colNames) :
+{}
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<Integer> indices = new ArrayList<Integer>();
+    for(int i=0; i<colNames.size(); i++) {
+      for(int j=0; j<existColumnNames.size(); j++) {
+        if(colNames.get(i).equals(existColumnNames.get(j))) {
+          indices.add(j);
+          break;
+        }
+      }
+    }
+
+    return indices;
+  }
+}
+
+boolean CheckInsertReferentialIntegrityError(String tblName, String changedColAndSrc) :
+{}
+{
+  {
+    // find fk column names from my table
+    Vector<String> fkcs = myDB.getDB(tblName + " @foreign key");
+    ArrayList<String> inputColumnNames = split(changedColAndSrc.split("/")[0], "|");
+    ArrayList<String> inputValues = split(changedColAndSrc.split("/")[1], "|");
+    
+    for(int i=0; i<fkcs.size(); i++) {
+      String fkc = fkcs.elementAt(i);
+      String _fkColNames = split(fkc, "@").get(0);
+      ArrayList<String> fkColNames = split(_fkColNames, "|");
+      
+      ArrayList<String> temp_list = split(split(fkc, "&").get(1), "|");
+      String refTblName = temp_list.get(0);
+      ArrayList<String> refColNames = new ArrayList<String>();
+      for(int j=1; j<temp_list.size(); j++) {
+        refColNames.add(temp_list.get(j));
+      }
+      
+      ArrayList<String> existCheckColNames = new ArrayList<String>();
+      ArrayList<String> existCheckValues = new ArrayList<String>();
+            
+      // extract fk columns and values from input
+      for(int j=0; j<inputColumnNames.size(); j++) {
+        for(int k=0; k<fkColNames.size(); k++) {
+          if(fkColNames.get(k).equals(inputColumnNames.get(j))) {
+            existCheckColNames.add(refColNames.get(k));
+            existCheckValues.add(inputValues.get(j));
+          } // if end
+        } // kdx end
+      } //jdx end
+
+      if(!isRecordExistForeignKey(refTblName, existCheckColNames, existCheckValues)) {
+        return true;
+      }
+    }// idx end
+
+    return false;
+  }
+}
+
+boolean isRecordExistForeignKey(String tblName, ArrayList<String> colNames, ArrayList<String> values) :
+{}
+{
+  {
+    Vector<String> records = myDB.getDB(tblName + " @records");
+    // tblName : enemy, colName : my colNames
+    ArrayList<Integer> colIndices = findColumnIndices(tblName, colNames);
+	
+	if(colIndices.size() != values.size()) {
+	  //System.out.println("jaewan, findColumnIndices error");
+	}
+    
+    for(int i=0; i<records.size(); i++) {
+      ArrayList<String> record = split(records.get(i), "|");
+      int matchCount = 0;
+      for(int j=0; j<values.size(); j++) {
+        if(values.get(j).equals("null")) {
+          matchCount++;
+          break;
+        }
+        int existColIndex = colIndices.get(j);
+        
+        if(values.get(j).equals(record.get(existColIndex))) {
+          matchCount++;
+          break;
+        }
+      } // inner for close
+
+      if(matchCount == values.size()) {
+        return true;
+      }
+      
+    } // outer for close
+
+    
+    return false;
+  }
+}
+
+// when insert, truncate values that is char type
+String truncate(String tblName, String changedColAndSrc) :
+{}
+{
+  {
+    //String findExisttypeFromInput(String inputColumnName, ArrayList<String> existColumnNames, ArrayList<String> existColumnTypes)
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+    ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+    
+	String result = "";
+	String col = changedColAndSrc.split("/")[0];
+	String src = changedColAndSrc.split("/")[1];
+	String resultSrc = "";
+	ArrayList<String> inputColumnNames = split(col, " |");
+	ArrayList<String> inputValues = split(src, "|");
+	for(int i=0; i<inputValues.size(); i++) {
+	  if(inputValues.get(i).equals("null")) {
+	    resultSrc = resultSrc + "|" + "null";
+	    continue;
+	  }
+	  String valueType = inputValues.get(i).split(":")[0];
+	  String realValue = inputValues.get(i).split(":")[1];
+	  String tempResult = "";
+	  String existColType = findExisttypeFromInput(inputColumnNames.get(i), existColumnNames, existColumnTypes);
+	  String existRealType = split(existColType, "*").get(0);
+	  if(valueType.equals("str")) {
+	    // existRealType = char(d1d2d3...dn)
+	    int charLengthLimit = Integer.parseInt(existRealType.substring(5, existRealType.length()-1));
+	    // should consider ''
+	    if(charLengthLimit < realValue.length()-2) {
+	      String realString = realValue.substring(1, realValue.length()-1);
+	      tempResult = valueType + ":" + "'" + realString.substring(0, charLengthLimit) + "'";
+	      resultSrc = resultSrc + "|" + tempResult;
+	    } else {
+	      tempResult = valueType + ":" + realValue;
+	      resultSrc = resultSrc + "|" + tempResult;
+	    }
+	  }
+	  else {
+	    resultSrc = resultSrc + "|" + inputValues.get(i);
+	  }
+	}
+
+	return resultSrc;
+  }
+}
+int InsertQuery() :{
+  String tblName;
+  String colAndSrc;
+  String colName;
+  String changedColAndSrc = "";
+  String finalInputString = "";
+}{
+  { tmpForKey = ""; }  < INSERT_INTO > tblName = TableName()
+  {
+    if (CheckNoSuchTable(tblName))
+    {
+      NoSuchTable();
+    }
+  }
+  colAndSrc = InsertColumnsAndSource()  {
+    if ((colName = CheckInsertColumnExistenceError(tblName, colAndSrc)) != null) {
+      System.out.println("Insertion has failed: '" + colName + "' does not exist");
+      handleDBError(parser);
+    }
+    else if (CheckInsertTypeMismatchError(tblName, colAndSrc)) {
+      System.out.println("Insertion has failed: Types are not matched");
+      handleDBError(parser);
+    }
+
+	changedColAndSrc = changeColAndSrc(tblName, colAndSrc); 
+    if ((colName = CheckInsertColumnNonNullableError(tblName, colAndSrc)) != null) {
+      System.out.println("Insertion has failed: '" + colName + "' is not nullable");
+      handleDBError(parser);
+    }
+    else {
+      
+      if(CheckInsertDuplicatePrimaryKeyError(tblName, changedColAndSrc)) {
+        System.out.println("Insertion has failed: Primary key duplication");
+        handleDBError(parser);
+      }
+      else if(CheckInsertReferentialIntegrityError(tblName, changedColAndSrc)) {
+        System.out.println("Insertion has failed: Referential integrity violation");
+        handleDBError(parser);
+      }
+    }
+
+    finalInputString = truncate(tblName, changedColAndSrc);
+    myDB.putDB(tblName + " @records", finalInputString);
+    return 5;  }}String InsertColumnsAndSource() :{String valueList = "";}{  (    ColumnNameList(false) // not implemented.
+  )?  valueList = ValueList()
+  {
+    if(tmpForKey.equals("")) { return valueList; }
+    else { return tmpForKey + '/' + valueList; }
+  }}String ValueList() :{
+  String valueList = "";
+  String value = "";
+}{  < VALUES > < LEFT_PAREN > value = Value() { valueList += delim + value; }  (    < COMMA > value = Value() { valueList += delim + value; }  )*  < RIGHT_PAREN > { return valueList; }}String Value() :{ String compValue; }{  < NULL > { return "null"; }| compValue = ComparableValue() { return compValue;}}
+
+// extract all comparison predicates from bve
+// return ArrayList<ComparisonPredicate> comparsionPredicates in bve
+// used in where incomparable error check
+ArrayList<ComparisonPredicate> extractComparisonPredicatesFromBVE(BooleanValueExpression bve) : {}
+{
+  {
+	ArrayList<ComparisonPredicate> comparisonPredicates = new ArrayList<ComparisonPredicate>();
+	if(bve == null) return comparisonPredicates;
+
+	for(BooleanTerm bterm : bve.bts) {
+	  for(BooleanFactor bfactor : bterm.bfs) {
+	    if(bfactor.bt.p != null && bfactor.bt.p.cp != null) { comparisonPredicates.add(bfactor.bt.p.cp); } 
+	  }
+	}
+
+	return comparisonPredicates;
+  }
+}
+// extract all predicates from bve
+// return ArrayList<Predicate> predicates in bve
+// used in where table not specified error check
+ArrayList<Predicate> extractPredicatesFromBVE(BooleanValueExpression bve) : { }
+{
+  {
+	ArrayList<Predicate> predicates = new ArrayList<Predicate>();
+	if(bve == null) return predicates;
+
+	for(BooleanTerm bterm : bve.bts) {
+	  for(BooleanFactor bfactor : bterm.bfs) {
+	    if(bfactor.bt.p != null) { predicates.add(bfactor.bt.p); } 
+	  }
+	}
+
+	return predicates;
+  }
+}
+
+// tblName should contain every possible table names
+// ex) from stu as s, ins as i
+// then tblNames = { "stu", "s", "ins", "i" }
+boolean CheckWhereTableNotSpecifiedError(ArrayList<String> tblNames, BooleanValueExpression bve) : { }
+{
+  {
+	ArrayList<Predicate> predicates = extractPredicatesFromBVE(bve);
+
+	for(Predicate p : predicates) {
+	  if(p.cp != null) {
+	    CompOperand co1 = p.cp.co1; CompOperand co2 = p.cp.co2;
+	    if(co1.compOperandAux != null) {
+	      String tblName = split(co1.compOperandAux, ".").get(0);
+	      if(!tblNames.contains(tblName)) { return true; }
+	    }
+	    if(co2.compOperandAux != null) {
+	      String tblName = split(co2.compOperandAux, ".").get(0);
+	      if(!tblNames.contains(tblName)) { return true; }
+	    }
+	  } else if(p.np != null) {
+	    if(p.np.nullPredicateAux == null) { return false; }
+		String tblName = split(p.np.nullPredicateAux, ".").get(0);
+		if(!tblNames.contains(tblName)) { return true; }
+	  }
+	  else {
+		//System.out.println("in CheckWhereTableNotSpecifiedError, both cp and np null error");
+		return true;
+	  }
+	}
+
+	return false;
+  }
+}
+
+
+// find number of matches of (column name aux or column name) from table name list
+// used in where column not exist , where column ambiguous reference
+// if match cnt == 0 : column not exist
+// if match cnt > 1 : column ambiguous reference
+// when both columnNameAux and columnName not null error, return 0
+int findColumnMatchCount(ArrayList<String> tblNames, String columnNameAux, String columnName) : { }
+{
+  {
+
+	if(columnNameAux != null) {
+	  int refCnt = 0;
+	  String inputTblName = split(columnNameAux, ".").get(0);
+	  String inputColName = split(columnNameAux, ".").get(1);
+	  String colDef = myDB.getDB(inputTblName + " @column definition").elementAt(0);
+	  ArrayList<String> existColumnNames = getColumns(colDef, "name");
+	  for(String tblName : tblNames) {
+	    if(tblName.equals(inputTblName) && existColumnNames.contains(inputColName)) { refCnt++; }
+	  }
+	  return refCnt;
+	  
+	} else if(columnName != null) {
+	  String inputColName = columnName;
+	  int colRefCnt = 0;
+	  for(String tblName : tblNames) {
+	    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+	    ArrayList<String> existColumnNames = getColumns(colDef, "name");
+	    if(existColumnNames.contains(inputColName)) { colRefCnt++; }
+	  }
+	  return colRefCnt;
+	} else {
+	  // case : contant
+	  return 1;
+	}
+  }
+}
+
+boolean CheckWhereColumnNotExistError(ArrayList<String> tblNames, BooleanValueExpression bve) : { }
+{
+  {
+	ArrayList<Predicate> predicates = extractPredicatesFromBVE(bve);
+	for(Predicate p : predicates) {
+	  if(p.cp != null) {
+	    CompOperand co1 = p.cp.co1; CompOperand co2 = p.cp.co2;
+	    int co1RefCnt = findColumnMatchCount(tblNames, co1.compOperandAux, co1.columnName);
+	    if(co1RefCnt == 0) { return true; }
+	    int co2RefCnt = findColumnMatchCount(tblNames, co2.compOperandAux, co2.columnName);
+	    if(co2RefCnt == 0) { return true; }
+	    
+	  } else if(p.np != null) {
+	    int npRefCnt = findColumnMatchCount(tblNames, p.np.nullPredicateAux, p.np.columnName);
+	    if(npRefCnt == 0) { return true; }
+	  } else {
+		//System.out.println("in check where column not exist error, both predicate and null predicate not null error");
+	    return true;
+	  }
+	}
+
+	return false;
+  }
+}
+
+boolean CheckWhereAmbiguousReferenceError(ArrayList<String> tblNames, BooleanValueExpression bve) : { }
+{
+  {
+    ArrayList<Predicate> predicates = extractPredicatesFromBVE(bve);
+	for(Predicate p : predicates) {
+	  if(p.cp != null) {
+	    CompOperand co1 = p.cp.co1; CompOperand co2 = p.cp.co2;
+	    int co1RefCnt = findColumnMatchCount(tblNames, co1.compOperandAux, co1.columnName);
+	    if(co1RefCnt > 1) { return true; }
+	    int co2RefCnt = findColumnMatchCount(tblNames, co2.compOperandAux, co2.columnName);
+	    if(co2RefCnt > 1) { return true; }
+	    
+	  } else if(p.np != null) {
+	    int npRefCnt = findColumnMatchCount(tblNames, p.np.nullPredicateAux, p.np.columnName);
+	    if(npRefCnt > 1) { return true; }
+	  } else {
+		//System.out.println("in check where ambiguous reference error, both predicate and null predicate not null error");
+	    return true;
+	  }
+	}
+
+	return false;
+  }
+}
+
+// return real type of CompOperand
+// ex) return "int", "char", "date", "null"
+// tblNames : when delete, delete query's table name
+// tblNames : when select, from's table names
+String getTypeFromCompOperand(ArrayList<String> tblNames, CompOperand co) : { }
+{
+  {
+    String coType;
+    if(co.compOperandAux != null) {
+      String tblName = split(co.compOperandAux, ".").get(0);
+      String colName = split(co.compOperandAux, ".").get(1);
+      String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+      ArrayList<String> existColumnNames = getColumns(colDef, "name");
+      ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+      String colType = findExisttypeFromInput(colName, existColumnNames, existColumnTypes);
+
+      coType = split(colType, "*").get(0);
+    }
+    else if(co.columnName != null) {
+      String colName = co.columnName;
+      
+      String colType = "";
+      for(String tblName : tblNames) {
+        String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+        ArrayList<String> existColumnNames = getColumns(colDef, "name");
+        ArrayList<String> existColumnTypes = getColumns(colDef, "type");
+        colType = findExisttypeFromInput(colName, existColumnNames, existColumnTypes);
+        if(colType != null) { break; }
+      }
+       
+      coType = split(colType, "*").get(0);
+    }
+    else if(co.comparableValue != null) {
+      String valueType = split(co.comparableValue, ":").get(0);
+      coType = valueType;
+    }
+    else { System.out.println("CompOperand all null error"); coType = ""; }
+
+    if(coType.contains("int")) { return "int"; }
+    else if(coType.contains("char")) { return "char"; }
+    else if(coType.contains("date")) { return "date"; }
+    else if(coType.contains("str")) { return "char"; }
+    else if(coType.contains("num")) { return "int"; }
+    // error case
+    else { System.out.println("getTypeFromCompOperand error, type is strange"); return null;}
+  }
+}
+
+boolean CheckWhereIncomparableError(ArrayList<String> tblNames, BooleanValueExpression bve) : {}
+{
+  {
+    ArrayList<ComparisonPredicate> cps = extractComparisonPredicatesFromBVE(bve);
+    for(ComparisonPredicate cp : cps) {
+      String co1Type = getTypeFromCompOperand(tblNames, cp.co1);
+      String co2Type = getTypeFromCompOperand(tblNames, cp.co2);
+      if(co1Type.equals(co2Type)) { return false; }
+      else { return true; }
+    }
+    return false;
+  }
+}
+
+String evalRecordWithPredicate(ArrayList<String> values, String tblName, Predicate p) : { }
+{
+  {
+    String colDef = myDB.getDB(tblName + " @column definition").elementAt(0);
+    ArrayList<String> columnNames = getColumns(colDef, "name");
+    // setting value1
+    if(p.cp != null) {
+      CompOperand co1 = p.cp.co1;
+      CompOperand co2 = p.cp.co2;
+      String compOp = p.cp.compOp;
+      String value1 = "";
+      String value2 = "";
+      if(co1.compOperandAux != null) {
+        String colName = split(co1.compOperandAux, ".").get(1);
+        for(int i=0; i<columnNames.size(); i++) {
+          if(columnNames.get(i).equals(colName)) {
+            value1 = values.get(i);
+            break;
+          }
+        }
+      } else if(co1.columnName != null) {
+        String colName = co1.columnName;
+        for(int i=0; i<columnNames.size(); i++) {
+          if(columnNames.get(i).equals(colName)) {
+            value1 = values.get(i);
+            break;
+          }
+        }
+      }
+      else {
+        value1 = p.cp.co1.comparableValue;
+      }
+      // setting value2
+      if(co2.compOperandAux != null) {
+        String colName = split(co2.compOperandAux, ".").get(1);
+        for(int i=0; i<columnNames.size(); i++) {
+          if(columnNames.get(i).equals(colName)) {
+            value2 = values.get(i);
+            break;
+          }
+        }
+      } else if(co2.columnName != null) {
+        String colName = co2.columnName;
+        for(int i=0; i<columnNames.size(); i++) {
+          if(columnNames.get(i).equals(colName)) {
+            value2 = values.get(i);
+            break;
+          }
+        }
+      }
+      else {
+        value2 = p.cp.co2.comparableValue;
+      }
+
+      if(value1.equals("") || value2.equals("")) { System.out.println("evalRecords, cp value1 or value2 not got error");}
+      
+      // compare value1 , value2
+      if(value1.equals("null") || value2.equals("null")) {
+		// unknown 
+        return "unknown";
+      } else {
+        String valueType = split(value1, ":").get(0);
+        String value1Value = split(value1, ":").get(1);
+        String value2Value = split(value2, ":").get(1);
+        
+        if(valueType.equals("num")) {
+          int _value1 = Integer.parseInt(value1Value);
+          int _value2 = Integer.parseInt(value2Value);
+          if(compOp.equals("<")) { return _value1 < _value2 ? "true" : "false"; }
+          else if(compOp.equals(">")) { return _value1 > _value2 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return _value1 <= _value2 ? "true" : "false"; }
+          else if(compOp.equals(">=")) { return _value1 >= _value2 ? "true" : "false"; }
+          else if(compOp.equals("!=")) { return _value1 != _value2 ? "true" : "false"; }
+          else { return _value1 == _value2 ? "true" : "false"; }
+        }
+
+        else if(valueType.equals("str")) {
+          // trim ''
+          String _value1 = value1Value.substring(1, value1Value.length());
+          String _value2 = value2Value.substring(1, value2Value.length());
+    
+          int compResult = _value1.compareTo(_value2);
+          if(compOp.equals("<")) { return compResult < 0 ? "true" : "false";}
+          else if(compOp.equals(">")) { return compResult > 0 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return compResult <= 0 ? "true" : "false";}
+          else if(compOp.equals(">=")) { return compResult >= 0 ? "true" : "false";}
+          else if(compOp.equals("!=")) { return compResult != 0 ? "true" : "false";}
+          else { return compResult == 0 ? "true" : "false";}
+        }
+
+        else if(valueType.equals("date")) {
+          int compResult = value1.compareTo(value2);
+          if(compOp.equals("<")) { return compResult < 0 ? "true" : "false";}
+          else if(compOp.equals(">")) { return compResult > 0 ? "true" : "false"; }
+          else if(compOp.equals("<=")) { return compResult <= 0 ? "true" : "false";}
+          else if(compOp.equals(">=")) { return compResult >= 0 ? "true" : "false";}
+          else if(compOp.equals("!=")) { return compResult != 0 ? "true" : "false";}
+          else { return compResult == 0 ? "true" : "false";}
+        }
+        // value type error case
+        else {
+          System.out.println("evalRecords, comparable value type error");
+          return "false";
+        }
+      }
+    } else if(p.np != null) {
+      String colName;
+      String value = "";
+      if(p.np.nullPredicateAux != null) { colName = split(p.np.nullPredicateAux, ".").get(1); }
+      else if(p.np.columnName != null) { colName = p.np.columnName; }
+      else { System.out.println("evalRecords, null predicate has no both nullPredicateAux and columnName"); return "false"; }
+      // setting value
+      for(int i=0; i<columnNames.size(); i++) {
+        if(columnNames.get(i).equals(colName)) {
+          value = values.get(i);
+          break;
+        }
+      }
+
+      if(value.equals("")) { System.out.println("evalRecords, np value not got error"); return "false"; }
+      
+      // is null
+      if(p.np.nullOperation.equals("is null")) {
+        return value.equals("null") ? "true" : "false";
+      }
+      // is not null
+      else {
+		return !value.equals("null") ? "true" : "false";
+      }
+    } else {
+      System.out.println("evalRecordWithPredicate, both cp and np null error");
+      return "false";
+    }
+
+  }
+}
+
+void realDelete(String tblName, BooleanValueExpression bve) : { }
+{
+  {
+    int deleteCnt = 0;
+    int referentialCnt = 0;
+    ArrayList<Integer> deleteIndices = new ArrayList<Integer>();
+    Vector<String> records = myDB.getDB(tblName + " @records");
+
+	for(int i=0; i<records.size(); i++) {
+	  String bveResult;
+	  String record = records.elementAt(i);
+      ArrayList<String> values = split(record.substring(1), "|");
+
+      if(bve == null) { bveResult = "true"; }
+      else { bveResult = bve.eval(values, tblName); }
+
+      if(bveResult.equals("false") || bveResult.equals("unknown")) { continue; }
+      else {
+        // satisfy bve but cannot delete because of referentail integrity
+        if(CheckDeleteReferentialIntegrity(tblName, values)) { referentialCnt++; }
+        else {
+          // yay! can delete this record
+          // but caution : list cannot delete in "for"
+          // just add delete index
+          deleteCnt++;
+          deleteIndices.add(i);
+        }
+      }
+    }
+
+    
+    myDB.deleteDB(tblName + " @records");
+	// use deleteIndices;
+    for(int i=0; i<records.size(); i++) {
+      // not delete record
+      if(!deleteIndices.contains(i)) {
+        myDB.putDB(tblName + " @records", records.elementAt(i));
+      }
+      else {
+		//delete records, so need to cascade
+		ArrayList<String> values = split(records.get(i), "|");
+		cascade(tblName, values);
+      }
+    }
+
+    // print delete message
+    System.out.println(deleteCnt + " row(s) are deleted");
+    if(referentialCnt != 0) { System.out.println(referentialCnt + " row(s) are not deleted due to referential integrity"); }
+  }
+}
+
+ArrayList<String> findRefTables(String tblName) : { }
+{
+  {
+    ArrayList<String> resultTblNames = new ArrayList<String>();
+    Vector<String> tblNames = myDB.getDB("@table name");
+    
+    for(String tbl : tblNames) {
+      Vector<String> fks = myDB.getDB(tbl + " @foreign key");
+      
+      for(String fk : fks) {
+        String refTblName = split(split(fk, "&").get(1), "|").get(0);
+        if(refTblName.equals(tblName)) {
+          resultTblNames.add(tbl);
+          break;
+        }
+      }
+    }
+
+    return resultTblNames;
+  }
+}
+
+
+// if found, return fkc
+// if not found, return null;
+String findFKC(String myTblName, String targetTblName) : { }
+{
+  {
+    
+	Vector<String> fkcs = myDB.getDB(myTblName + " @foreign key");
+	for(String fkc : fkcs) {
+	  String refTblName = split(split(fkc, "&").get(1), "|").get(0);
+	  if(refTblName.equals(targetTblName)) { return fkc; }
+	}
+	System.out.println("findFKC, refTbl not exist error");
+	return null;
+  }
+}
+
+
+// check delete referential integrity for tblName's record
+// values equals record
+boolean CheckDeleteReferentialIntegrity(String tblName, ArrayList<String> values) : { }
+{
+  {
+    // find tables who reference me
+    ArrayList<String> refTblNames = findRefTables(tblName);
+    for(String tbl : refTblNames) {
+      String fkc = findFKC(tbl, tblName);
+      if(fkc == null) { System.out.println("CheckDeleteReferentialIntegrity, fkc non exist error"); return false;}
+
+      ArrayList<String> fcColumns = split(split(fkc, "@").get(0), "|");
+      ArrayList<String> myColumns = split(split(fkc, "&").get(1), "|");
+      // because myColumn.get(0) is <tableName>
+      myColumns.remove(0);
+
+      boolean isNonNullableColumnExist = false;
+
+      // check foreign key
+      ArrayList<String> pks = split(myDB.getDB(tbl + " @primary key").elementAt(0), "|");
+      for(String cn : fcColumns) {
+        if(pks.contains(cn)) { isNonNullableColumnExist = true; break; }
+      }
+
+      // check colDef
+      String colDef = myDB.getDB(tbl + " @column definition").elementAt(0);
+      ArrayList<Integer> colIndicesTbl = findColumnIndices(tbl, fcColumns);
+      ArrayList<Integer> colIndicesMy = findColumnIndices(tblName, myColumns);
+      
+      ArrayList<String> colTypes = getColumns(colDef, "type");
+
+      for(int i=0; i<colIndicesTbl.size(); i++) {
+        int colIndex = colIndicesTbl.get(i);
+        // colType : int*not null
+        String colType = colTypes.get(colIndex);
+        if(split(colType, "*").size() == 2) { isNonNullableColumnExist = true; break;}
+      }
+
+      Vector<String> records = myDB.getDB(tbl + " @records");
+      for(String record : records) {
+        ArrayList<String> _values = split(record, "|");
+        boolean isValueSame = true;
+        for(int i=0; i<colIndicesTbl.size(); i++) {
+          int index1 = colIndicesTbl.get(i);
+          int index2 = colIndicesMy.get(i);
+          String value1 = _values.get(index1);
+          String value2 = values.get(index2);
+          if(!value1.equals(value2)) { isValueSame = false; }
+        }
+
+		// now record's values and my values are same
+		if(isNonNullableColumnExist && isValueSame) { return true; }
+        
+      }
+      
+    } // table loop end
+
+    return false;
+  }
+}
+
+void cascade(String tblName, ArrayList<String> values) : { }
+{
+  {
+    // find tables who reference me
+    ArrayList<String> refTblNames = findRefTables(tblName);
+    // cascade buffer
+	
+    for(String tbl : refTblNames) {
+      ArrayList<String> cascadeBuffer = new ArrayList<String>();
+      
+      String fkc = findFKC(tbl, tblName);
+      if(fkc == null) { System.out.println("CheckDeleteReferentialIntegrity, fkc non exist error"); return; }
+
+      ArrayList<String> fcColumns = split(split(fkc, "@").get(0), "|");
+      ArrayList<String> myColumns = split(split(fkc, "&").get(1), "|");
+      // because myColumn.get(0) is <tableName>
+      myColumns.remove(0);
+
+      
+      ArrayList<Integer> colIndicesTbl = findColumnIndices(tbl, fcColumns);
+      ArrayList<Integer> colIndicesMy = findColumnIndices(tblName, myColumns);
+      
+     
+      Vector<String> records = myDB.getDB(tbl + " @records");
+      for(String record : records) {
+        ArrayList<String> _values = split(record, "|");
+        boolean isValueSame = true;
+        for(int i=0; i<colIndicesTbl.size(); i++) {
+          int index1 = colIndicesTbl.get(i);
+          int index2 = colIndicesMy.get(i);
+          String value1 = _values.get(index1);
+          String value2 = values.get(index2);
+          if(!value1.equals(value2)) { isValueSame = false; }
+        }
+
+		// now record's values and my values are same
+		if(isValueSame) {
+		  // change reference columns to null
+		  for(int i=0; i<colIndicesTbl.size(); i++) {
+		    int index = colIndicesTbl.get(i);
+		    _values.set(index, "null");
+		  }
+		  String _record = "";
+		  for(int i=0; i<_values.size(); i++) {
+		    _record = _record + "|" + _values.get(i);
+		  }
+		  cascadeBuffer.add(_record.substring(1));
+		}
+		else { cascadeBuffer.add(record); }
+        
+      }
+
+
+      // main cascade
+      myDB.deleteDB(tbl + " @records");
+      for(int i=0; i<cascadeBuffer.size(); i++) {
+        myDB.putDB(tbl + " @records", cascadeBuffer.get(i));
+      }
+      
+    } // table loop end
+
+
+    return;
+  }
+}
+int DeleteQuery() :{ String tblName; BooleanValueExpression bve = null; }{  < DELETE_FROM > tblName = TableName()
+  {
+    if (CheckNoSuchTable(tblName))
+    {
+      NoSuchTable();
+    }
+  }  (    bve = WhereClause()  )?  {
+    ArrayList<String> tblNames = new ArrayList<String>();
+    tblNames.add(tblName);
+    // delete later start
+    //if(bve != null) { bve.print(); }
+    // else { System.out.println("no bve"); }
+	// delete later end
+
+	if(CheckWhereTableNotSpecifiedError(tblNames, bve)) {
+		System.out.println("Where clause try to reference tables which are not specified");
+		handleDBError(parser);
+	}
+	else if(CheckWhereColumnNotExistError(tblNames, bve)) {
+		System.out.println("Where clause try to reference non existing column");
+		handleDBError(parser);
+	}
+	else if(CheckWhereAmbiguousReferenceError(tblNames, bve)) {
+		System.out.println("Where clause contains ambiguous reference");
+		handleDBError(parser);
+	}
+    else if(CheckWhereIncomparableError(tblNames, bve)) {
+		System.out.println("Where clause try to compare incomparable values");
+		handleDBError(parser);
+    }
+
+    realDelete(tblNames.get(0), bve);    return 6;  }}boolean IsKeyword(String s) :{}{  {    return keywordSet.contains(s.toLowerCase());  }}void Success(int i) :{}{  {    switch (i)    {      case 0 :       CreateTableSuccess();      break;      case 1 :       DropSuccess();      break;      case 4 :       break;      case 5 :
+      InsertSuccess();      break;      case 6 :       break;      case - 1 : myDB.closeDB();      System.exit(0);      break;    }  }}void Start() :{  Token t;}{  {    System.out.print("DB_2012-11249 > ");  }  (    Command()  )*  {    System.out.println("Syntax error");    parser = new SimpleDBMS(System.in);    handleSyntaxError(parser);  }}
+
+SKIP :
+{
+  < _SPACE : < SPACE >>
+| "\t"
+| "\n"
+| "\r"
+}
+
+TOKEN : // Elementary
+{
+  < SEMICOLON : ";" >
+| < UNDERSCORE : "_" >
+| < LEFT_PAREN : "(" >
+| < RIGHT_PAREN : ")" >
+| < COMMA : "," >
+| < PERIOD : "." >
+| < COMP_OP :
+    "<"
+  | ">"
+  | "="
+  | ">="
+  | "<="
+  | "!=" >
+| < DIGIT : [ "0"-"9" ] >
+| < SIGN :
+    (
+      "+"
+    | "-"
+    ) >
+| < QUOTE : "'" >
+| < NON_QUOTE_SPECIAL_CHARACTERS :
+    "`"
+  | "~"
+  | "!"
+  | "@"
+  | "#"
+  | "$"
+  | "%"
+  | "^"
+  | "&"
+  | "*"
+  | "("
+  | ")"
+  | "_"
+  | "-"
+  | "+"
+  | "="
+  | "|"
+  | "["
+  | "]"
+  | ":"
+  | "<"
+  | ","
+  | ">"
+  | "."
+  | "?"
+  | "/" >
+| < ALPHABET : [ "A"-"Z", "a"-"z" ] >
+| < SPACE : " " >
+| < SPACES :
+    " "
+  | "\n"
+  | "\r"
+  | "\t" >
+}
+
+TOKEN : // Keywords
+{
+  < EXIT : "exit" >
+  //jw
+| < RECORDS  : "records">
+| < DELETE_AT : "deleteat">
+  //jw
+| < CREATE_TABLE : "create table">
+| < NOT_NULL : "not null" >
+| < PRIMARY_KEY : "primary key" >
+| < FOREIGN_KEY : "foreign key" >
+| < REFERENCES : "references" >
+| < INT : "int" >
+| < CHAR : "char" >
+| < DATE : "date" >
+| < DROP_TABLE : "drop table">
+| < SHOW_TABLES : "show tables" >
+| < DESC : "desc">
+| < SELECT : "select" >
+| < AS : "as" >
+| < FROM : "from" >
+| < WHERE : "where" >
+| < AND : "and" >
+| < OR : "or" >
+| < NOT : "not" >
+| < IS_NULL : "is null" >
+| < IS_NOT_NULL : "is not null" >
+| < INSERT_INTO : "insert into" >
+| < VALUES : "values" >
+| < NULL : "null" >
+| < DELETE_FROM : "delete from" >
+}
+
+TOKEN : // Comprised
+{
+  < LEGAL_IDENTIFIER :
+    < ALPHABET >
+    (
+      < ALPHABET >
+    | < UNDERSCORE >
+    )* >
+| < INT_VALUE : (< SIGN >)? (< DIGIT >)+ >
+| < DATE_VALUE : < DIGIT > < DIGIT > < DIGIT > < DIGIT > "-" < DIGIT > < DIGIT > "-" < DIGIT > < DIGIT >>
+| < CHAR_STRING :
+    < QUOTE >
+    (
+      < DIGIT >
+    | < ALPHABET >
+    | < NON_QUOTE_SPECIAL_CHARACTERS >
+    | < SPACE >
+    )*
+    < QUOTE >>
+}
