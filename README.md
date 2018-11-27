@@ -1,4 +1,5 @@
 # database_2017_f
+Java와 javacc를 이용하여 DBMS를 직접 구현해보고 해당 DBMS를 이용하여 예약 application을 구현
 
 ## PRJ 1-1
 - javacc를 이용한 query parsing 구현
