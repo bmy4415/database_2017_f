@@ -18,4 +18,4 @@ Java와 javacc를 이용하여 DBMS를 직접 구현해보고 해당 DBMS를 이
     - select
 
 ## PRJ 2
-- PRJ 1에서 만든 DBMS를 이용하여 공연 예약 application 구현
+- MariaDB를 이용하여 공연 예약 application 구현
